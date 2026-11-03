@@ -1,0 +1,1171 @@
+openapi: 3.1.0
+info:
+  title: HR Assistant Backend API
+  version: 1.0.0
+  description: |
+    REST API личного кабинета HR для управления вакансиями и вопросами
+    асинхронного интервью.
+
+    ## Авторизация
+
+    После регистрации или входа API возвращает короткоживущий `access_token`.
+    Передавайте его в защищённые запросы как `Authorization: Bearer <token>`.
+    Долгоживущий refresh-токен хранится в cookie `hr_refresh`; Postman сохраняет
+    эту cookie автоматически. Запрос `/auth/refresh` ротирует refresh-токен и
+    возвращает новую пару авторизационных данных.
+
+    ## Вакансии
+
+    HR видит и изменяет только собственные вакансии. Чужой или отсутствующий
+    ресурс возвращается как `404`. Новая вакансия создаётся сразу активной.
+    Для публикации нужны обязательные поля, будущий срок действия и хотя бы один
+    вопрос. Публикация создаёт публичную ссылку интервью; архивирование отключает её.
+
+    ## Ошибки
+
+    Все ошибки имеют единый объект `error` с машинным `code`, сообщением и
+    `request_id`, который можно использовать для поиска запроса в логах.
+
+    Раздел кандидатов содержит завершённые интервью и ответы только по
+    вакансиям текущего HR-пользователя.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Локальный backend, запущенный через Docker Compose
+tags:
+  - name: Auth
+    description: Регистрация HR, управление сессией и получение текущего пользователя.
+  - name: Vacancies
+    description: CRUD вакансий, публикация, архивирование и управление публичной ссылкой.
+  - name: Questions
+    description: Упорядоченный список обязательных вопросов с текстовым или голосовым ответом.
+  - name: Candidates
+    description: Завершённые интервью кандидатов и их ответы.
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: Зарегистрировать HR
+      description: |
+        Создаёт HR-пользователя и сразу открывает сессию. Email нормализуется
+        перед сохранением и должен быть уникальным. Access JWT возвращается в JSON,
+        refresh JWT устанавливается в HttpOnly cookie `hr_refresh`.
+      requestBody:
+        required: true
+        description: Данные нового HR-пользователя.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+      responses:
+        '201':
+          description: HR создан и авторизован; refresh JWT установлен в cookie.
+          headers:
+            Set-Cookie: {$ref: '#/components/headers/RefreshCookie'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResponse'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Войти в личный кабинет
+      description: Проверяет email и пароль, создаёт новую сессию и устанавливает refresh cookie.
+      requestBody:
+        required: true
+        description: Учётные данные HR.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200':
+          description: Успешный вход; refresh JWT установлен в cookie.
+          headers:
+            Set-Cookie: {$ref: '#/components/headers/RefreshCookie'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refresh
+      summary: Обновить токены
+      description: |
+        Использует cookie `hr_refresh`, ротирует refresh-токен и возвращает новый
+        access-токен. Повторное использование уже ротированного refresh-токена
+        отзывает соответствующую сессию.
+      security:
+        - refreshCookie: []
+      responses:
+        '200':
+          description: Access JWT обновлён, refresh JWT ротирован.
+          headers:
+            Set-Cookie: {$ref: '#/components/headers/RefreshCookie'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Завершить сессию
+      description: Отзывает текущую сессию и удаляет refresh cookie.
+      security:
+        - refreshCookie: []
+      responses:
+        '204':
+          description: Сессия отозвана, refresh cookie удалена.
+          headers:
+            Set-Cookie: {$ref: '#/components/headers/RefreshCookie'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /auth/me:
+    get:
+      tags: [Auth]
+      operationId: me
+      summary: Получить текущего HR
+      description: Возвращает профиль пользователя из действующей access-сессии.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Текущий HR.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /vacancies:
+    get:
+      tags: [Vacancies]
+      operationId: listVacancies
+      summary: Получить список вакансий
+      description: Возвращает страницу вакансий текущего HR, при необходимости отфильтрованную по статусу.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: status
+          description: Вернуть только вакансии с указанным статусом.
+          schema: {$ref: '#/components/schemas/VacancyStatus'}
+        - in: query
+          name: limit
+          description: Максимальное количество вакансий в ответе.
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - in: query
+          name: offset
+          description: Количество вакансий, пропускаемых от начала списка.
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        '200':
+          description: Вакансии текущего HR.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VacancyList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    post:
+      tags: [Vacancies]
+      operationId: createVacancy
+      summary: Создать вакансию
+      description: |
+        Атомарно создаёт активную вакансию вместе с вопросами и публичной Telegram-ссылкой.
+        При ошибке ни вакансия, ни вопросы не сохраняются.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        description: Полностью заполненная вакансия и хотя бы один вопрос.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VacancyCreate'}
+      responses:
+        '201':
+          description: Создана активная вакансия.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Vacancy'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /vacancies/{vacancyId}:
+    parameters:
+      - $ref: '#/components/parameters/VacancyId'
+    get:
+      tags: [Vacancies]
+      operationId: getVacancy
+      summary: Получить вакансию
+      description: Возвращает вакансию вместе с вопросами в их текущем порядке.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Вакансия с вопросами.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Vacancy'
+                  - type: object
+                    required: [questions]
+                    properties:
+                      questions:
+                        type: array
+                        items: {$ref: '#/components/schemas/Question'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+    patch:
+      tags: [Vacancies]
+      operationId: updateVacancy
+      summary: Изменить вакансию
+      description: |
+        Частично изменяет переданные поля вакансии. Отсутствующие поля остаются
+        без изменений. Для nullable-полей явный `null` очищает значение.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        description: Только изменяемые поля вакансии.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VacancyPatch'}
+      responses:
+        '200':
+          description: Вакансия обновлена.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Vacancy'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /vacancies/{vacancyId}/archive:
+    parameters: [{$ref: '#/components/parameters/VacancyId'}]
+    post:
+      tags: [Vacancies]
+      operationId: archiveVacancy
+      summary: Архивировать вакансию
+      description: Переводит опубликованную вакансию в `archived` и немедленно отключает публичную ссылку.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {$ref: '#/components/responses/VacancyActionOK'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /vacancies/{vacancyId}/restore:
+    parameters: [{$ref: '#/components/parameters/VacancyId'}]
+    post:
+      tags: [Vacancies]
+      operationId: restoreVacancy
+      summary: Вернуть вакансию в активные
+      description: Переводит архивную вакансию в `published` и создаёт новую Telegram-ссылку.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {$ref: '#/components/responses/VacancyActionOK'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /vacancies/{vacancyId}/link/rotate:
+    parameters: [{$ref: '#/components/parameters/VacancyId'}]
+    post:
+      tags: [Vacancies]
+      operationId: rotateVacancyLink
+      summary: Перевыпустить публичную ссылку
+      description: Создаёт новую ссылку опубликованной вакансии; предыдущая сразу становится недействительной.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {$ref: '#/components/responses/VacancyActionOK'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /vacancies/{vacancyId}/questions:
+    parameters: [{$ref: '#/components/parameters/VacancyId'}]
+    get:
+      tags: [Questions]
+      operationId: listQuestions
+      summary: Получить вопросы вакансии
+      description: Возвращает вопросы по возрастанию поля `position`.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Упорядоченные вопросы.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QuestionList'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+    post:
+      tags: [Questions]
+      operationId: createQuestion
+      summary: Добавить вопрос
+      description: Добавляет обязательный вопрос с выбранным форматом ответа в конец текущего списка.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        description: Текст нового вопроса.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QuestionInput'}
+      responses:
+        '201':
+          description: Вопрос добавлен в конец списка.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Question'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /vacancies/{vacancyId}/questions/{questionId}:
+    parameters:
+      - $ref: '#/components/parameters/VacancyId'
+      - $ref: '#/components/parameters/QuestionId'
+    patch:
+      tags: [Questions]
+      operationId: updateQuestion
+      summary: Изменить вопрос
+      description: Изменяет формулировку и формат ответа, сохраняя текущую позицию вопроса.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        description: Новый текст вопроса.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QuestionInput'}
+      responses:
+        '200':
+          description: Вопрос обновлён.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Question'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      tags: [Questions]
+      operationId: deleteQuestion
+      summary: Удалить вопрос
+      description: |
+        Удаляет вопрос и атомарно уплотняет позиции оставшихся вопросов.
+        У опубликованной вакансии нельзя удалить последний вопрос.
+      security: [{bearerAuth: []}]
+      responses:
+        '204':
+          description: Вопрос удалён, позиции уплотнены.
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /vacancies/{vacancyId}/questions/order:
+    parameters: [{$ref: '#/components/parameters/VacancyId'}]
+    put:
+      tags: [Questions]
+      operationId: reorderQuestions
+      summary: Изменить порядок вопросов
+      description: |
+        Принимает полный список ID всех вопросов вакансии в новом порядке.
+        Проверка состава и запись позиций выполняются атомарно.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        description: Полный упорядоченный список ID вопросов данной вакансии.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question_ids]
+              properties:
+                question_ids:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  description: Все ID вопросов вакансии, перечисленные ровно по одному разу.
+                  items: {type: string, format: uuid}
+              example:
+                question_ids:
+                  - 7d444842-9dc0-11d1-b245-5ffdce74fad2
+                  - 7d444841-9dc0-11d1-b245-5ffdce74fad2
+      responses:
+        '200':
+          description: Новый порядок сохранён атомарно.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QuestionList'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /vacancies/public/{publicToken}:
+    get:
+      tags: [Vacancies]
+      operationId: getVacancyWelcomeMessage
+      summary: Получить приветствие активной вакансии
+      description: REST endpoint для Telegram-бота. Принимает master-токен или обычный access JWT. Неактивная, просроченная или неизвестная ссылка возвращает `404`.
+      security: [{masterToken: []}, {bearerAuth: []}]
+      parameters:
+        - in: path
+          name: publicToken
+          required: true
+          description: Токен из Telegram deep link.
+          schema: {type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$'}
+        - in: query
+          name: telegram_user_id
+          required: true
+          description: Telegram user ID кандидата, для которого проверяется доступность попытки.
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        '200':
+          description: Приветствие вакансии и доступность попытки кандидата.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [welcome_message, already_attempted, description]
+                properties:
+                  description: {type: [string, 'null'], maxLength: 10000}
+                  welcome_message: {type: string}
+                  already_attempted: {type: boolean}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /candidates:
+    get:
+      tags: [Candidates]
+      operationId: listCandidates
+      summary: Получить завершённые интервью кандидатов
+      description: Возвращает только завершённые интервью по вакансиям текущего HR.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: search
+          description: Поиск без учёта регистра по имени, фамилии или Telegram username.
+          schema: {type: string, maxLength: 100}
+        - in: query
+          name: vacancy_id
+          description: Вернуть интервью только по указанной вакансии.
+          schema: {type: string, format: uuid}
+        - in: query
+          name: limit
+          description: Максимальное количество интервью в ответе.
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - in: query
+          name: offset
+          description: Количество интервью, пропускаемых от начала списка.
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        '200':
+          description: Страница завершённых интервью текущего HR.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CandidateInterviewList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /candidates/{sessionId}/answers/{answerId}/evaluation/retry:
+    post:
+      tags: [Candidates]
+      operationId: retryAnswerEvaluation
+      summary: Повторить неуспешную проверку ответа
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: {type: string, format: uuid}
+        - in: path
+          name: answerId
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version]
+              properties:
+                version: {type: integer, minimum: 1, description: Версия неуспешной проверки; повторный запрос идемпотентен.}
+      responses:
+        '202':
+          description: Повторная проверка поставлена в очередь.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version]
+                properties:
+                  version: {type: integer, minimum: 1}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /candidates/{sessionId}:
+    get:
+      tags: [Candidates]
+      operationId: getCandidate
+      summary: Получить завершённое интервью кандидата
+      description: Возвращает профиль кандидата, данные вакансии и ответы в порядке вопросов.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          description: UUID завершённой сессии интервью.
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Завершённое интервью кандидата.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CandidateInterviewDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /evaluation-criteria/templates:
+    get:
+      tags: [Vacancies]
+      operationId: listEvaluationCriterionTemplates
+      summary: Получить каталог критериев оценки
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Версионируемый каталог шаблонов.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EvaluationCriterionCatalog'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /candidates/{sessionId}/report/rebuild:
+    post:
+      tags: [Candidates]
+      operationId: rebuildCandidateReport
+      summary: Пересобрать общий отчёт
+      description: Новая версия заменяет отображаемый отчёт только после успешной валидации. Повтор с той же наблюдаемой версией идемпотентен.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version]
+              properties:
+                version: {type: integer, minimum: 0, maximum: 2147483646}
+      responses:
+        '202':
+          description: Сборка отчёта запрошена.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version]
+                properties:
+                  version: {type: integer, minimum: 1}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access JWT из ответа регистрации, входа или обновления токенов.
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: hr_refresh
+      description: HttpOnly refresh JWT. Postman обычно сохраняет cookie автоматически.
+    masterToken:
+      type: http
+      scheme: bearer
+      description: Master-токен сервисного доступа из `MASTER_API_TOKEN`.
+  parameters:
+    VacancyId:
+      in: path
+      name: vacancyId
+      required: true
+      description: UUID вакансии текущего HR.
+      schema: {type: string, format: uuid, example: 7d444840-9dc0-11d1-b245-5ffdce74fad2}
+    QuestionId:
+      in: path
+      name: questionId
+      required: true
+      description: UUID вопроса внутри вакансии.
+      schema: {type: string, format: uuid, example: 7d444841-9dc0-11d1-b245-5ffdce74fad2}
+  headers:
+    RefreshCookie:
+      description: HttpOnly cookie `hr_refresh`; в production также имеет атрибут Secure.
+      schema: {type: string}
+  responses:
+    BadRequest:
+      description: Запрос не соответствует OpenAPI-контракту.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example:
+            error:
+              code: invalid_request
+              message: Request does not match the API contract
+              request_id: 8fc49c2b2f56/request-000001
+              details: {reason: request body has an error}
+    Unauthorized:
+      description: Требуется действующая авторизация.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example:
+            error:
+              code: unauthenticated
+              message: Authentication is required
+              request_id: 8fc49c2b2f56/request-000002
+    Forbidden:
+      description: Origin запроса не разрешён.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example:
+            error:
+              code: forbidden
+              message: Request origin is not allowed
+              request_id: 8fc49c2b2f56/request-000003
+    NotFound:
+      description: Ресурс отсутствует или принадлежит другому HR.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example:
+            error:
+              code: vacancy_not_found
+              message: Vacancy not found
+              request_id: 8fc49c2b2f56/request-000004
+    Conflict:
+      description: Конфликт уникальности или состояния.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example:
+            error:
+              code: invalid_vacancy_state
+              message: Vacancy state does not allow this operation
+              request_id: 8fc49c2b2f56/request-000005
+    ValidationError:
+      description: Ошибка валидации.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example:
+            error:
+              code: validation_failed
+              message: Validation failed
+              request_id: 8fc49c2b2f56/request-000006
+              details: {field: title}
+    VacancyActionOK:
+      description: Переход состояния выполнен.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Vacancy'}
+  schemas:
+    EvaluationCriterion:
+      type: object
+      additionalProperties: false
+      required: [id, title, evaluationGuide, position, sourceTemplateId]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string, minLength: 1, maxLength: 120}
+        evaluationGuide: {type: string, minLength: 1, maxLength: 2000}
+        position: {type: integer, minimum: 0, maximum: 19}
+        sourceTemplateId: {type: [string, 'null'], format: uuid}
+    EvaluationCriterionTemplate:
+      type: object
+      required: [id, title, evaluationGuide]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        evaluationGuide: {type: string}
+    EvaluationCriterionCatalog:
+      type: object
+      required: [version, items]
+      properties:
+        version: {type: string}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/EvaluationCriterionTemplate'}
+    CandidateReport:
+      type: object
+      required: [status, version, result_version, result, overall_score, scored_criteria, total_criteria, error_code, model, prompt_version, schema_version]
+      properties:
+        status: {type: string, enum: [not_started, pending, succeeded, permanent_failed]}
+        version: {type: integer, minimum: 0}
+        result_version: {type: [integer, 'null'], minimum: 1}
+        result:
+          oneOf:
+            - {$ref: '#/components/schemas/CandidateReportResult'}
+            - {type: 'null'}
+        overall_score: {type: [number, 'null'], minimum: 0, maximum: 10}
+        scored_criteria: {type: integer, minimum: 0}
+        total_criteria: {type: integer, minimum: 0, maximum: 20}
+        error_code: {type: [string, 'null']}
+        model: {type: [string, 'null']}
+        prompt_version: {type: [string, 'null']}
+        schema_version: {type: [string, 'null']}
+    CandidateReportResult: {"type": "object", "properties": {"summary": {"type": "string", "minLength": 1, "maxLength": 8000, "pattern": "\\S"}, "criterion_scores": {"type": "array", "items": {"type": "object", "properties": {"criterion_id": {"type": "string", "format": "uuid"}, "name": {"type": "string", "minLength": 1, "maxLength": 120, "pattern": "\\S"}, "status": {"type": "string", "enum": ["scored", "insufficient_data"]}, "score": {"type": ["number", "null"], "minimum": 0, "maximum": 10}, "summary": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"}, "evidence": {"type": "array", "items": {"type": "object", "properties": {"question_number": {"type": "integer", "minimum": 1}, "quote": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"}}, "required": ["question_number", "quote"], "additionalProperties": false}, "maxItems": 10}, "missing_information": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"}, "maxItems": 10}}, "required": ["criterion_id", "name", "status", "score", "summary", "evidence", "missing_information"], "additionalProperties": false}, "maxItems": 20}, "strengths": {"type": "array", "items": {"type": "object", "properties": {"title": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "\\S"}, "description": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"}, "evidence": {"type": "array", "items": {"type": "object", "properties": {"question_number": {"type": "integer", "minimum": 1}, "quote": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"}}, "required": ["question_number", "quote"], "additionalProperties": false}, "maxItems": 10}}, "required": ["title", "description", "evidence"], "additionalProperties": false}, "maxItems": 10}, "concerns": {"type": "array", "items": {"type": "object", "properties": {"title": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "\\S"}, "description": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"}, "evidence": {"type": "array", "items": {"type": "object", "properties": {"question_number": {"type": "integer", "minimum": 1}, "quote": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"}}, "required": ["question_number", "quote"], "additionalProperties": false}, "maxItems": 10}, "severity": {"type": "string", "enum": ["low", "medium", "high"]}}, "required": ["title", "description", "evidence", "severity"], "additionalProperties": false}, "maxItems": 10}, "missing_information": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"}, "maxItems": 20}, "follow_up_questions": {"type": "array", "items": {"type": "object", "properties": {"question": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"}, "reason": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"}}, "required": ["question", "reason"], "additionalProperties": false}, "maxItems": 5}, "analysis_completeness": {"type": "object", "properties": {"status": {"type": "string", "enum": ["complete", "partial"]}, "processed_answers": {"type": "integer", "minimum": 0}, "total_answers": {"type": "integer", "minimum": 0}, "issues": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"}, "maxItems": 100}}, "required": ["status", "processed_answers", "total_answers", "issues"], "additionalProperties": false}}, "required": ["summary", "criterion_scores", "strengths", "concerns", "missing_information", "follow_up_questions", "analysis_completeness"], "additionalProperties": false, "x-go-type": "candidatereport.Result", "x-go-type-import": {"path": "hr-assistant/shared/candidatereport"}}
+    CandidateProfile:
+      type: object
+      description: Доступные HR данные Telegram-профиля кандидата.
+      required: [telegram_user_id, username, first_name, last_name, is_premium, language_code, first_seen_at, last_seen_at]
+      properties:
+        telegram_user_id: {type: integer, format: int64}
+        username: {type: [string, 'null']}
+        first_name: {type: string}
+        last_name: {type: [string, 'null']}
+        is_premium: {type: boolean}
+        language_code: {type: [string, 'null']}
+        first_seen_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
+    CandidateVacancy:
+      type: object
+      required: [id, title]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+    CandidateInterviewListItem:
+      type: object
+      required: [id, candidate, vacancy, started_at, completed_at, duration_seconds, answer_count]
+      properties:
+        id: {type: string, format: uuid}
+        candidate: {$ref: '#/components/schemas/CandidateProfile'}
+        vacancy: {$ref: '#/components/schemas/CandidateVacancy'}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        duration_seconds: {type: integer, format: int64, minimum: 0}
+        answer_count: {type: integer, minimum: 0}
+    CandidateInterviewList:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CandidateInterviewListItem'}
+        total: {type: integer, format: int64, minimum: 0}
+        limit: {type: integer, minimum: 1}
+        offset: {type: integer, minimum: 0}
+    AnswerEvaluation:
+      type: object
+      required: [status, result, version, resultVersion, reason]
+      properties:
+        attempts:
+          type: integer
+          minimum: 0
+          description: Число попыток в завершённой версии проверки; до завершения равно нулю.
+        errorCode: {type: [string, 'null']}
+        status:
+          type: string
+          enum: [skipped, pending, succeeded, permanent_failed]
+        result:
+          oneOf:
+            - {$ref: '#/components/schemas/AnswerEvaluationResult'}
+            - {type: 'null'}
+        version: {type: [integer, 'null'], minimum: 1}
+        resultVersion: {type: [integer, 'null'], minimum: 1}
+        reason:
+          type: [string, 'null']
+          enum: [no_guide, waiting_transcription, transcription_failed, null]
+    AnswerEvaluationResult: {"type": "object", "additionalProperties": false, "required": ["summary", "checks", "follow_up_questions"], "properties": {"summary": {"type": "string", "minLength": 1, "maxLength": 2000}, "checks": {"type": "array", "maxItems": 20, "items": {"$ref": "#/components/schemas/AnswerEvaluationCheck"}}, "follow_up_questions": {"type": "array", "maxItems": 3, "items": {"type": "string", "minLength": 1, "maxLength": 1000}}}}
+    AnswerEvaluationCheck: {"type": "object", "additionalProperties": false, "required": ["criterion", "type", "status", "evidence", "explanation"], "properties": {"criterion": {"type": "string", "minLength": 1, "maxLength": 1000}, "type": {"type": "string", "enum": ["expected", "unwanted"]}, "status": {"type": "string", "enum": ["found", "not_found", "unclear"]}, "evidence": {"type": "array", "maxItems": 5, "items": {"type": "string", "minLength": 1, "maxLength": 1000}}, "explanation": {"type": "string", "minLength": 1, "maxLength": 2000}}}
+    VoiceTranscriptionStatus:
+      type: string
+      enum: [pending, succeeded, permanent_failed]
+    CandidateVoiceTranscription:
+      type: object
+      required: [status, text]
+      properties:
+        status: {$ref: '#/components/schemas/VoiceTranscriptionStatus'}
+        text: {type: [string, 'null']}
+    CandidateInterviewAnswer:
+      type: object
+      required: [id, position, question, answer_type, answered_at, text, transcription, evaluation]
+      properties:
+        id: {type: string, format: uuid}
+        position:
+          type: integer
+          minimum: 0
+          description: Позиция вопроса; отсчёт начинается с нуля.
+        question: {type: string}
+        evaluation: {$ref: '#/components/schemas/AnswerEvaluation'}
+        answer_type: {$ref: '#/components/schemas/QuestionAnswerType'}
+        answered_at: {type: string, format: date-time}
+        text:
+          type: [string, 'null']
+          description: Исходный текстовый ответ; для голосового ответа всегда null.
+        transcription:
+          oneOf:
+            - {$ref: '#/components/schemas/CandidateVoiceTranscription'}
+            - {type: 'null'}
+    CandidateInterviewDetail:
+      type: object
+      required: [id, candidate, vacancy, started_at, completed_at, duration_seconds, answers, report]
+      properties:
+        report: {$ref: '#/components/schemas/CandidateReport'}
+        id: {type: string, format: uuid}
+        candidate: {$ref: '#/components/schemas/CandidateProfile'}
+        vacancy: {$ref: '#/components/schemas/CandidateVacancy'}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        duration_seconds: {type: integer, format: int64, minimum: 0}
+        answers:
+          type: array
+          items: {$ref: '#/components/schemas/CandidateInterviewAnswer'}
+    RegisterRequest:
+      type: object
+      description: Данные самостоятельной регистрации HR-пользователя.
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Email для входа. Регистр и пробелы нормализуются backend.
+          example: anna.hr@example.com
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+          format: password
+          description: Пароль длиной от 10 до 128 символов.
+          example: strong-password-2026
+      example:
+        email: anna.hr@example.com
+        password: strong-password-2026
+    LoginRequest:
+      type: object
+      description: Учётные данные существующего HR.
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email, указанный при регистрации.
+          example: anna.hr@example.com
+        password:
+          type: string
+          format: password
+          description: Пароль HR.
+          example: strong-password-2026
+      example:
+        email: anna.hr@example.com
+        password: strong-password-2026
+    AuthResponse:
+      type: object
+      description: Результат открытия или обновления HR-сессии.
+      required: [access_token, token_type, expires_in, user]
+      properties:
+        access_token:
+          type: string
+          description: JWT для заголовка `Authorization`. Значение в примере сокращено.
+          example: eyJhbGciOiJIUzI1NiJ9.example.signature
+        token_type:
+          type: string
+          const: Bearer
+          description: Схема авторизации access-токена.
+        expires_in:
+          type: integer
+          description: Срок жизни access JWT в секундах.
+          example: 900
+        user: {$ref: '#/components/schemas/User'}
+    User:
+      type: object
+      description: HR-пользователь личного кабинета.
+      required: [id, email, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID HR-пользователя.
+          example: 7d444800-9dc0-11d1-b245-5ffdce74fad2
+        email:
+          type: string
+          format: email
+          description: Нормализованный уникальный email.
+          example: anna.hr@example.com
+        created_at:
+          type: string
+          format: date-time
+          description: Время регистрации.
+          example: '2026-08-24T12:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Время последнего изменения.
+          example: '2026-08-24T12:00:00Z'
+    VacancyStatus:
+      type: string
+      enum: [published, archived]
+      description: |
+        Состояние вакансии:
+        - `published` — активна, ссылка интервью доступна;
+        - `archived` — ссылка отключена.
+      example: published
+    VacancyCreate:
+      type: object
+      description: Полностью заполненная вакансия, создаваемая сразу активной.
+      additionalProperties: false
+      required: [title, interview_language, welcome_message, interview_duration_minutes, questions]
+      properties:
+        description: {type: [string, 'null'], maxLength: 10000}
+        evaluationCriteria:
+          type: array
+          maxItems: 20
+          items: {$ref: '#/components/schemas/EvaluationCriterion'}
+        title: {type: string, minLength: 1, maxLength: 255}
+        interview_language: {type: string, minLength: 1, maxLength: 255, default: ru}
+        welcome_message: {type: string, minLength: 1, maxLength: 10000}
+        interview_duration_minutes:
+          type: integer
+          enum: [5, 15, 30, 60]
+          default: 15
+          description: Максимальное время прохождения интервью в минутах.
+        questions:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/QuestionInput'}
+    VacancyInput:
+      type: object
+      description: Поля для частичного обновления активной вакансии.
+      additionalProperties: false
+      properties:
+        description: {type: [string, 'null'], maxLength: 10000}
+        evaluationCriteria:
+          type: array
+          maxItems: 20
+          items: {$ref: '#/components/schemas/EvaluationCriterion'}
+        title:
+          type: string
+          maxLength: 255
+          description: Название позиции.
+          example: Senior Go Developer
+        interview_language:
+          type: string
+          maxLength: 255
+          description: Язык прохождения интервью.
+          example: ru
+        welcome_message:
+          type: string
+          maxLength: 10000
+          description: Сообщение кандидату перед началом интервью.
+          example: Расскажите о своём опыте. Удачи!
+        interview_duration_minutes:
+          type: integer
+          enum: [5, 15, 30, 60]
+          description: Максимальное время прохождения интервью в минутах.
+          example: 15
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+          description: Необязательный момент завершения приёма интервью; если задан, для публикации должен быть в будущем.
+          example: '2030-12-31T23:59:59Z'
+      example:
+        title: Senior Go Developer
+        interview_language: ru
+        welcome_message: Расскажите о своём опыте. Удачи!
+        expires_at: '2030-12-31T23:59:59Z'
+    VacancyPatch:
+      description: Частичное изменение вакансии; передавать нужно только изменяемые поля.
+      allOf:
+        - $ref: '#/components/schemas/VacancyInput'
+      example:
+        title: Lead Go Developer
+    Vacancy:
+      type: object
+      description: Вакансия HR без списка вопросов.
+      required: [id, title, description, evaluationCriteria, interview_language, welcome_message, interview_duration_minutes, expires_at, status, interview_url, created_at, updated_at]
+      properties:
+        description: {type: [string, 'null'], maxLength: 10000}
+        evaluationCriteria:
+          type: array
+          maxItems: 20
+          items: {$ref: '#/components/schemas/EvaluationCriterion'}
+        id:
+          type: string
+          format: uuid
+          description: UUID вакансии.
+          example: 7d444840-9dc0-11d1-b245-5ffdce74fad2
+        title:
+          type: string
+          description: Название позиции.
+          example: Senior Go Developer
+        interview_language:
+          type: string
+          description: Язык интервью.
+          example: ru
+        welcome_message:
+          type: string
+          description: Приветствие кандидата.
+          example: Расскажите о своём опыте. Удачи!
+        interview_duration_minutes:
+          type: integer
+          enum: [5, 15, 30, 60]
+          description: Максимальное время прохождения интервью в минутах.
+          example: 15
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+          description: Срок действия вакансии.
+          example: '2030-12-31T23:59:59Z'
+        status: {$ref: '#/components/schemas/VacancyStatus'}
+        interview_url:
+          type: [string, 'null']
+          format: uri
+          description: Telegram deep link опубликованной вакансии; иначе `null`.
+          example: 'https://t.me/bot?start=3mZK9q8Pexample'
+        created_at:
+          type: string
+          format: date-time
+          description: Время создания.
+          example: '2026-08-24T12:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Время последнего изменения.
+          example: '2026-08-24T12:05:00Z'
+    VacancyList:
+      type: object
+      description: Страница вакансий текущего HR.
+      required: [items, limit, offset]
+      properties:
+        items:
+          type: array
+          description: Вакансии текущей страницы.
+          items: {$ref: '#/components/schemas/Vacancy'}
+        limit:
+          type: integer
+          description: Применённый размер страницы.
+          example: 20
+        offset:
+          type: integer
+          description: Применённое смещение.
+          example: 0
+    QuestionAnswerType:
+      type: string
+      enum: [text, voice]
+      default: text
+      description: |
+        Формат ответа кандидата:
+        - `text` — текстовое сообщение;
+        - `voice` — голосовое сообщение.
+      example: text
+    QuestionInput:
+      type: object
+      description: Формулировка обязательного вопроса и ожидаемый формат ответа.
+      additionalProperties: false
+      required: [text, answer_type]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Формулировка вопроса кандидату.
+          example: Расскажите о наиболее сложном сервисе, который вы проектировали на Go.
+        evaluationGuide:
+          type: [string, 'null']
+          maxLength: 4000
+          description: Необязательные ориентиры HR; пустое значение сохраняется как null. Кандидату не передаются.
+        answer_type:
+          $ref: '#/components/schemas/QuestionAnswerType'
+      example:
+        text: Расскажите о наиболее сложном сервисе, который вы проектировали на Go.
+        answer_type: text
+    Question:
+      type: object
+      description: Вопрос интервью и его позиция внутри вакансии.
+      required: [id, vacancy_id, text, answer_type, evaluationGuide, position, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID вопроса.
+          example: 7d444841-9dc0-11d1-b245-5ffdce74fad2
+        vacancy_id:
+          type: string
+          format: uuid
+          description: UUID родительской вакансии.
+          example: 7d444840-9dc0-11d1-b245-5ffdce74fad2
+        text:
+          type: string
+          description: Формулировка вопроса.
+          example: Расскажите о наиболее сложном сервисе, который вы проектировали на Go.
+        evaluationGuide:
+          type: [string, 'null']
+          maxLength: 4000
+          description: Необязательные ориентиры HR; пустое значение сохраняется как null. Кандидату не передаются.
+        answer_type:
+          $ref: '#/components/schemas/QuestionAnswerType'
+        position:
+          type: integer
+          minimum: 0
+          description: Позиция в списке; отсчёт начинается с нуля.
+          example: 0
+        created_at:
+          type: string
+          format: date-time
+          description: Время создания.
+          example: '2026-08-24T12:10:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Время последнего изменения.
+          example: '2026-08-24T12:10:00Z'
+    QuestionList:
+      type: object
+      description: Вопросы вакансии в порядке прохождения интервью.
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: Упорядоченные вопросы.
+          items: {$ref: '#/components/schemas/Question'}
+    Error:
+      type: object
+      description: Единый формат ошибки API.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Стабильный машинный код ошибки.
+              example: validation_failed
+            message:
+              type: string
+              description: Понятное человеку описание ошибки.
+              example: must not be empty
+            request_id:
+              type: string
+              description: Идентификатор запроса для сопоставления с логами.
+              example: 8fc49c2b2f56/request-000006
+            details:
+              type: object
+              description: Дополнительный контекст, например ошибочное поле.
+              additionalProperties: true
+              example: {field: title}

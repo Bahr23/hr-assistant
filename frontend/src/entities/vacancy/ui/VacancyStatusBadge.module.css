@@ -1,0 +1,19 @@
+.published,
+.archived {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  padding: var(--space-xxs) var(--space-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.published {
+  background: var(--color-success);
+  color: var(--color-on-dark);
+}
+
+.archived {
+  background: var(--color-hairline);
+  color: var(--color-muted);
+}

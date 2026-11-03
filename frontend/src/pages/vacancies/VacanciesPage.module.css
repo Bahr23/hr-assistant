@@ -1,0 +1,94 @@
+.page {
+  width: min(100%, var(--container));
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3.5rem);
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-xl);
+}
+
+.eyebrow {
+  margin-bottom: var(--space-xs);
+  color: var(--color-brand-blue);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.header h1 {
+  color: var(--color-ink-deep);
+  font-size: var(--text-display-md);
+  font-weight: 500;
+  letter-spacing: -1px;
+  line-height: 1.15;
+}
+
+.header div > p:last-child {
+  margin-top: var(--space-xs);
+  color: var(--color-steel);
+}
+
+.listSection {
+  margin-top: var(--space-xxxl);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-xl);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.filters button {
+  min-height: 38px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-full);
+  background: var(--color-canvas);
+  color: var(--color-steel);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  font-size: var(--text-small);
+  font-weight: 500;
+}
+
+.filters button:hover { border-color: var(--color-hairline-strong); }
+.filters .selected { border-color: var(--color-primary); background: var(--color-primary); color: var(--color-on-dark); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
+}
+
+.empty {
+  display: grid;
+  min-height: 370px;
+  place-content: center;
+  justify-items: center;
+  border: 1px dashed var(--color-hairline-strong);
+  border-radius: var(--radius-xxxl);
+  background: var(--color-surface-soft);
+  padding: var(--space-xxxl);
+  text-align: center;
+}
+
+.empty > svg { width: 52px; height: 52px; margin-bottom: var(--space-lg); color: var(--color-brand-blue); }
+.empty h2 { color: var(--color-ink-deep); font-size: 1.625rem; font-weight: 500; }
+.empty p { max-width: 460px; margin: var(--space-xs) 0 var(--space-xl); color: var(--color-steel); }
+
+@media (max-width: 700px) {
+  .page { padding: var(--space-xl) var(--space-md); }
+  .header { align-items: stretch; flex-direction: column; }
+  .grid { grid-template-columns: 1fr; }
+  .filters { flex-wrap: nowrap; overflow-x: auto; }
+}

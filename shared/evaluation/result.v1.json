@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "checks", "follow_up_questions"],
+  "properties": {
+    "summary": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "checks": {
+      "type": "array", "maxItems": 20,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["criterion", "type", "status", "evidence", "explanation"],
+        "properties": {
+          "criterion": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "type": {"type": "string", "enum": ["expected", "unwanted"]},
+          "status": {"type": "string", "enum": ["found", "not_found", "unclear"]},
+          "evidence": {"type": "array", "maxItems": 5, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+          "explanation": {"type": "string", "minLength": 1, "maxLength": 2000}
+        }
+      }
+    },
+    "follow_up_questions": {"type": "array", "maxItems": 3, "items": {"type": "string", "minLength": 1, "maxLength": 1000}}
+  }
+}

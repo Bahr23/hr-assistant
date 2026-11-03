@@ -1,0 +1,62 @@
+.dialog {
+  width: min(calc(100% - 32px), 620px);
+  max-width: none;
+  max-height: min(760px, calc(100dvh - 32px));
+  margin: auto;
+  overflow: visible;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: transparent;
+  padding: 0;
+  color: var(--color-ink);
+}
+
+.dialog::backdrop {
+  background: rgba(5, 0, 56, 0.36);
+  backdrop-filter: blur(2px);
+}
+
+.panel {
+  overflow: hidden auto;
+  max-height: min(760px, calc(100dvh - 32px));
+  border: 1px solid var(--color-hairline-soft);
+  border-radius: var(--radius-xl);
+  background: var(--color-canvas);
+  box-shadow: var(--shadow-float);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  border-bottom: 1px solid var(--color-hairline-soft);
+  padding: var(--space-xl);
+}
+
+.header h2 {
+  color: var(--color-ink-deep);
+  font-size: var(--text-heading-sm);
+  font-weight: 500;
+}
+
+.header p {
+  margin-top: var(--space-xs);
+  color: var(--color-steel);
+  font-size: var(--text-small);
+}
+
+.close {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-slate);
+  cursor: pointer;
+}
+
+.close:hover { background: var(--color-hairline); color: var(--color-ink); }
+.close svg { width: 18px; height: 18px; }

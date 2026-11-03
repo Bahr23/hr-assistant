@@ -1,0 +1,69 @@
+.page {
+  display: grid;
+  width: min(100%, var(--container));
+  margin: 0 auto;
+  padding: clamp(1.25rem, 3.5vw, 3rem);
+  gap: var(--space-lg);
+}
+
+.back {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-steel);
+  font-size: var(--text-small);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.back:hover { color: var(--color-brand-blue); }
+.back svg { width: 18px; }
+
+.card {
+  display: grid;
+  border: 1px solid var(--color-hairline-soft);
+  border-radius: var(--radius-xl);
+  background: var(--color-canvas);
+  padding: clamp(1.25rem, 3vw, 2rem);
+  gap: var(--space-lg);
+  box-shadow: var(--shadow-subtle);
+}
+
+.sectionTitle { display: flex; align-items: flex-start; gap: var(--space-md); }
+.sectionTitle > span { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: var(--radius-lg); background: var(--color-yellow-light); color: var(--color-ink-deep); font-size: 13px; font-weight: 600; }
+.sectionTitle h2 { color: var(--color-ink-deep); font-size: 1.5rem; font-weight: 500; }
+.sectionTitle p { color: var(--color-steel); font-size: var(--text-small); }
+.twoColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
+.textarea { display: grid; gap: var(--space-xs); }
+.textarea > span { color: var(--color-charcoal); font-size: var(--text-small); font-weight: 500; }
+.textarea textarea, .addQuestion textarea { width: 100%; resize: none; border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-md); background: var(--color-canvas); color: var(--color-ink); padding: var(--space-md); outline: none; }
+.textarea textarea:focus, .addQuestion textarea:focus { border: 2px solid var(--color-brand-blue); box-shadow: var(--focus-ring); }
+.textarea small, .apiError { color: var(--color-coral-dark); font-size: 13px; }
+.formActions { display: flex; justify-content: flex-end; gap: var(--space-sm); }
+
+.questions { display: grid; margin: 0; padding: 0; gap: var(--space-sm); list-style: none; }
+.questions li { display: grid; grid-template-columns: 18px 34px 1fr auto; align-items: center; gap: var(--space-sm); border: 1px solid var(--color-hairline-soft); border-radius: var(--radius-md); background: var(--color-surface-soft); padding: var(--space-sm); transition: border-color var(--transition-fast), background var(--transition-fast); }
+.questions li.dragOver { border-color: var(--color-brand-blue); background: var(--color-surface-lavender); }
+.dragHandle { display: grid; width: 18px; padding: 0; place-items: center; background: transparent; color: var(--color-stone); cursor: grab; }
+.dragHandle:active { cursor: grabbing; }
+.dragHandle svg { width: 18px; }
+.questions li > span { color: var(--color-brand-blue); font-size: 13px; font-weight: 600; }
+.questionContent { display: grid; gap: var(--space-xxs); }
+.questionContent p { color: var(--color-charcoal); font-size: var(--text-small); white-space: pre-wrap; }
+.questionContent small { color: var(--color-steel); font-size: 12px; }
+.questionActions { display: flex; gap: var(--space-xxs); }
+.questionActions button { display: grid; width: 32px; height: 32px; place-items: center; border-radius: var(--radius-full); background: transparent; color: var(--color-stone); cursor: pointer; }
+.questionActions button:hover { background: var(--color-hairline); color: var(--color-ink); }
+.questionActions button:last-child:hover { background: var(--color-coral-light); color: var(--color-coral-dark); }
+.questionActions button svg { width: 17px; }
+.addQuestion { display: grid; gap: var(--space-sm); }
+.addQuestion button { justify-self: start; }
+.apiError { border-radius: var(--radius-md); background: var(--color-brand-red); padding: var(--space-sm) var(--space-md); }
+
+@media (max-width: 700px) {
+  .page { padding: var(--space-xl) var(--space-md); }
+  .twoColumns { grid-template-columns: 1fr; }
+  .formActions { align-items: stretch; flex-direction: column-reverse; }
+  .formActions button { width: 100%; }
+}

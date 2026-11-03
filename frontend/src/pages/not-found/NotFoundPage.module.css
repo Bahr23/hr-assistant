@@ -1,0 +1,31 @@
+.page {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-xl);
+  padding: var(--space-xl);
+  text-align: center;
+}
+
+.page > p {
+  color: var(--color-brand-blue);
+  font-size: var(--text-display-lg);
+  font-weight: 500;
+}
+
+.page h1 {
+  font-size: var(--text-display-md);
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.page > a:last-child {
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-on-dark);
+  padding: var(--space-sm) var(--space-xl);
+  font-size: var(--text-small);
+  font-weight: 500;
+  text-decoration: none;
+}

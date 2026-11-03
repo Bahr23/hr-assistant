@@ -1,0 +1,26 @@
+.section { display: grid; gap: var(--space-md); min-width: 0; }
+.heading, .toolbar, .actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; }
+.heading h2 { margin: 0; font-size: 20px; font-weight: 500; }
+.heading > span, .toolbar > span { color: var(--color-steel); font-size: 13px; }
+.hint, .empty, .warning { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-slate); }
+.empty { padding: var(--space-md); background: var(--color-surface); border-radius: var(--radius-md); }
+.warning { color: var(--color-yellow-dark); }
+.list { display: grid; gap: var(--space-md); padding: 0; margin: 0; list-style: none; }
+.criterion { display: grid; gap: var(--space-md); padding: var(--space-lg); border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); background: var(--color-canvas); min-width: 0; }
+.toolbar > div { display: flex; gap: 4px; }
+.toolbar button { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--color-hairline); border-radius: 50%; background: var(--color-canvas); cursor: pointer; color: var(--color-slate); }
+.toolbar button:disabled { opacity: .4; cursor: default; }
+.guide { display: grid; gap: var(--space-xs); }
+.guide label { font-weight: 500; }
+.guide p { font-size: 13px; line-height: 1.5; color: var(--color-steel); margin: 0; }
+.guide textarea { box-sizing: border-box; width: 100%; resize: vertical; min-height: 112px; font: inherit; color: var(--color-ink); border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); background: var(--color-canvas); }
+.guide textarea:focus { outline: 2px solid var(--color-brand-blue); outline-offset: 2px; }
+.guide textarea:disabled { opacity: .6; }
+.actions { justify-content: flex-start; }
+.catalogBody { display: grid; gap: var(--space-xl); padding: var(--space-xl); }
+.catalog { display: grid; gap: var(--space-md); max-height: 55vh; overflow-y: auto; }
+.template { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-md); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); cursor: pointer; }
+.template input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--color-primary); }
+.template strong { font-weight: 500; }
+.template small { display: block; color: var(--color-slate); line-height: 1.5; margin-top: var(--space-xs); }
+@media(max-width:480px) { .criterion { padding: var(--space-md); } .toolbar button { width:44px; height:44px; } }

@@ -1,0 +1,171 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE}
+    env_file:
+      - .env
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: ${POSTGRES_HEALTHCHECK_INTERVAL}
+      timeout: ${POSTGRES_HEALTHCHECK_TIMEOUT}
+      retries: ${POSTGRES_HEALTHCHECK_RETRIES}
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE}
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_PORT}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: ${RABBITMQ_HEALTHCHECK_INTERVAL}
+      timeout: ${RABBITMQ_HEALTHCHECK_TIMEOUT}
+      retries: ${RABBITMQ_HEALTHCHECK_RETRIES}
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
+    command: ["migrate"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  openrouter-worker-migrate:
+    build:
+      context: .
+      dockerfile: openrouter-worker/Dockerfile
+      target: runtime
+    command: ["migrate"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  openrouter-worker-topology:
+    build:
+      context: .
+      dockerfile: openrouter-worker/Dockerfile
+      target: runtime
+    command: ["topology"]
+    env_file:
+      - .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
+    env_file:
+      - .env
+    ports:
+      - "${BACKEND_PORT}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      openrouter-worker-topology:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/app/api", "healthcheck"]
+      interval: ${BACKEND_HEALTHCHECK_INTERVAL}
+      timeout: ${BACKEND_HEALTHCHECK_TIMEOUT}
+      retries: ${BACKEND_HEALTHCHECK_RETRIES}
+    restart: unless-stopped
+
+  openrouter-worker:
+    build:
+      context: .
+      dockerfile: openrouter-worker/Dockerfile
+      target: runtime
+    env_file:
+      - .env
+    depends_on:
+      openrouter-worker-migrate:
+        condition: service_completed_successfully
+      openrouter-worker-topology:
+        condition: service_completed_successfully
+    tmpfs:
+      - /tmp/openrouter-worker:size=256m,mode=0700
+    healthcheck:
+      test: ["CMD", "/app/openrouter-worker", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  cleanup-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
+    entrypoint: ["/app/cleanup-worker"]
+    env_file:
+      - .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  telegram-bot:
+    build:
+      context: ./telegram-bot
+    env_file:
+      - .env
+    environment:
+      BACKEND_API_URL: http://backend:8080/api/v1
+    depends_on:
+      backend:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+      args:
+        NODE_IMAGE: ${FRONTEND_NODE_IMAGE:-node:24-alpine}
+    environment:
+      DOCKER_DEV: "true"
+      VITE_API_URL: ${FRONTEND_API_URL:-http://localhost:8080/api/v1}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/tsconfig.app.json:/app/tsconfig.app.json
+      - ./frontend/tsconfig.node.json:/app/tsconfig.node.json
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: ${FRONTEND_HEALTHCHECK_INTERVAL:-5s}
+      timeout: ${FRONTEND_HEALTHCHECK_TIMEOUT:-3s}
+      retries: ${FRONTEND_HEALTHCHECK_RETRIES:-10}
+
+volumes:
+  postgres-data:
+  rabbitmq-data:

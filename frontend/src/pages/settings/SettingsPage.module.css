@@ -1,0 +1,83 @@
+.page {
+  display: grid;
+  width: min(100%, var(--container));
+  margin: 0 auto;
+  padding: clamp(1.5rem, 5vw, 4rem);
+  gap: var(--space-xl);
+}
+
+.page > header > p {
+  margin-bottom: var(--space-xs);
+  color: var(--color-brand-blue);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.page h1 {
+  color: var(--color-ink-deep);
+  font-size: var(--text-display-md);
+  font-weight: 500;
+  letter-spacing: -1px;
+}
+
+.card,
+.logoutCard {
+  border: 1px solid var(--color-hairline-soft);
+  border-radius: var(--radius-xl);
+  background: var(--color-canvas);
+  box-shadow: var(--shadow-subtle);
+  padding: var(--space-xl);
+}
+
+.title h2,
+.logoutCard h2 {
+  color: var(--color-ink-deep);
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.title p,
+.logoutCard p {
+  margin-top: var(--space-xxs);
+  color: var(--color-steel);
+  font-size: var(--text-small);
+}
+
+.card dl {
+  display: grid;
+  margin: var(--space-xl) 0 0;
+}
+
+.card dl > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.5fr) 1fr;
+  gap: var(--space-md);
+  border-top: 1px solid var(--color-hairline-soft);
+  padding: var(--space-md) 0;
+}
+
+.card dt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-steel);
+  font-size: var(--text-small);
+}
+
+.card dt svg { width: 17px; }
+.card dd { margin: 0; color: var(--color-charcoal); font-size: var(--text-small); }
+
+.logoutCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xl);
+  background: var(--color-surface-soft);
+}
+
+@media (max-width: 600px) {
+  .card dl > div { grid-template-columns: 1fr; gap: var(--space-xs); }
+  .logoutCard { align-items: stretch; flex-direction: column; }
+}

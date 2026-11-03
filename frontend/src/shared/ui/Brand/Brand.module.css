@@ -1,0 +1,19 @@
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--color-ink-deep);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--color-brand-yellow);
+  color: var(--color-primary);
+}

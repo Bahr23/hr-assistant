@@ -1,0 +1,18 @@
+.score { background: var(--color-canvas); border: 1px solid var(--color-hairline); border-radius: var(--radius-xl); padding: var(--space-lg); width: 232px; flex: 0 0 232px; max-width: 100%; overflow-wrap: anywhere; }
+.value > span { font-size: 12px; color: var(--color-slate); }
+.score strong { display: block; color: var(--color-ink-deep); font-size: 40px; font-weight: 500; letter-spacing: -1.5px; line-height: 1.2; margin: var(--space-xs) 0 var(--space-md); font-variant-numeric: tabular-nums; }
+.score strong small { font-size: 15px; font-weight: 400; letter-spacing: 0; color: var(--color-steel); }
+.score strong.missing { font-size: 17px; letter-spacing: 0; line-height: 1.4; }
+.score p { font-size: 12px; line-height: 1.5; color: var(--color-slate); margin: 0; }
+.coverageMeter { height: 5px; margin: var(--space-xs) 0; border-radius: var(--radius-full); overflow: hidden; background: var(--color-hairline-soft); }
+.coverageMeter > span { display: block; height: 100%; background: var(--color-brand-blue); border-radius: inherit; }
+.score .explanation { margin-top: var(--space-xs); color: var(--color-steel); font-size: 11px; }
+.score .previous { margin-top: var(--space-xs); color: var(--color-steel); }
+@media (max-width: 900px) {
+  .score { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-md); width: 100%; flex-basis: auto; padding: var(--space-md); }
+  .value { flex: 0 1 auto; }
+  .score strong { margin-bottom: 0; font-size: 32px; }
+  .score strong.missing { max-width: 190px; font-size: 16px; }
+  .coverage { flex: 1 1 145px; }
+  .score .previous { width: 100%; margin: 0; }
+}
